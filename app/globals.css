@@ -1,26 +1,93 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ─────────────────────────────────────────
+ * Muse brand tokens
+ * Light mode (default) / Dark mode (prefers-color-scheme)
+ * ───────────────────────────────────────── */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  /* Brand */
+  --brand: #F3498D;
+  --brand-strong: #DB3E7F;
+  --brand-light: #FFE5EC;
+  --brand-soft: #FFF5F8;
+
+  /* Surfaces */
+  --bg: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-subtle: #FAFAFA;
+  --bg-hover: #F5F5F5;
+
+  /* Text */
+  --fg: #1A1A1A;
+  --fg-muted: #767676;
+  --fg-subtle: #A8A8A8;
+
+  /* Border */
+  --border: #ECECEC;
+  --border-strong: #D8D8D8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --brand: #F3498D;
+    --brand-strong: #FF6BA3;
+    --brand-light: #3A1428;
+    --brand-soft: #1A0A12;
+
+    --bg: #0E0E10;
+    --bg-elevated: #161618;
+    --bg-subtle: #18181B;
+    --bg-hover: #1F1F22;
+
+    --fg: #F5F5F5;
+    --fg-muted: #A0A0A0;
+    --fg-subtle: #6A6A6A;
+
+    --border: #26262A;
+    --border-strong: #37373B;
   }
 }
 
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-light: var(--brand-light);
+  --color-brand-soft: var(--brand-soft);
+
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-hover: var(--bg-hover);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+}
+
+html {
+  color-scheme: light dark;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Logo color mask (흰 PNG → 브랜드 색상 자동 적용) */
+.logo-mask {
+  background-color: var(--brand);
+  -webkit-mask-image: url('/muse_logo.png');
+  mask-image: url('/muse_logo.png');
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
 }
