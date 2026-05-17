@@ -1,15 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-const SITE_URL = "https://muse-beauty.vercel.app"; // TODO: 배포 후 실제 도메인
+const SITE_URL = "https://themuselab.kr";
 const SITE_NAME = "Muse";
 const SITE_DESC =
-  "1인 뷰티샵 사장님 인스타 광고, 1분에 받으세요. AI가 가게 톤에 맞춘 광고 1장을 자동으로 만들어 인스타 DM으로 보내드려요. 헤어샵·네일·반영구·속눈썹·피부관리 모두.";
+  "1인 뷰티샵 사장님 인스타 광고, DM으로 받으세요. AI가 가게 톤에 맞춘 광고 1장을 만들어 인스타 DM으로 순서대로 보내드려요. 헤어샵·네일·반영구·속눈썹·피부관리 모두.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Muse · 1인 뷰티샵 인스타 광고 1분에",
+    default: "Muse · 1인 뷰티샵 인스타 광고 DM으로",
     template: "%s · Muse",
   },
   description: SITE_DESC,
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     locale: "ko_KR",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: "1인 뷰티샵 인스타 광고, 1분에 받으세요",
+    title: "1인 뷰티샵 인스타 광고, DM으로 받으세요",
     description: SITE_DESC,
     images: [
       {
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "1인 뷰티샵 인스타 광고, 1분에 받으세요",
+    title: "1인 뷰티샵 인스타 광고, DM으로 받으세요",
     description: SITE_DESC,
     images: ["/og.png"],
   },

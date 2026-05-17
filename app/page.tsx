@@ -54,7 +54,7 @@ export default function LandingPage() {
               뷰티 광고 템플릿
             </h1>
             <p className="text-sm text-fg-muted mt-1.5">
-              사장님 가게 톤에 맞춘 인스타 광고, 1분에.
+              사장님 가게 톤에 맞춘 인스타 광고, DM으로.
             </p>
           </div>
 

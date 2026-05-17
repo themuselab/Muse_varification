@@ -375,12 +375,11 @@ export default function CreateForm({
                 />
               </Field>
               <div className="bg-brand-light rounded-xl p-4 text-sm leading-relaxed">
-                💡 제출 후 인스타로{" "}
-                <strong className="text-brand">@themuselab.official</strong>
-                에게 자동으로 신청 메시지가 전송돼요.{" "}
-                {isCustom
-                  ? "24시간 안에 광고를 받으실 수 있어요."
-                  : "30분 안에 광고를 받으실 수 있어요."}
+                💡 제출 후 안내에 따라{" "}
+                <strong className="text-brand">@themuselab.official</strong>{" "}
+                팔로우 + 신청 코드 DM을 보내주시면, 신청 순서대로 광고 1장을
+                인스타 DM으로 보내드려요.{" "}
+                {isCustom && "(맞춤 제작은 시간이 더 걸려요)"}
               </div>
             </div>
           </Step>

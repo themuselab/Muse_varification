@@ -266,8 +266,8 @@ export async function POST(req: NextRequest) {
 
     const payload = {
       content: body.isCustom
-        ? `🎨 **맞춤 광고 신청** \`${code}\` (24시간 소요)`
-        : `🎨 **새 광고 신청** \`${code}\` (30분 내)`,
+        ? `🎨 **맞춤 광고 신청** \`${code}\``
+        : `🎨 **새 광고 신청** \`${code}\``,
       embeds: [infoEmbed, promptEmbed],
     };
     const dRes = await fetch(webhookUrl, {

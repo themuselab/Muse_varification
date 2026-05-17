@@ -6,7 +6,7 @@ import CreateForm from "@/app/components/CreateForm";
 export const metadata: Metadata = {
   title: "광고 만들기",
   description:
-    "인스타 ID와 가게 정보만 알려주세요. 1인 뷰티샵 광고 1장을 30분 안에 DM으로 받으실 수 있어요.",
+    "인스타 ID와 가게 정보만 알려주세요. 1인 뷰티샵 광고 1장을 신청 순서대로 DM으로 보내드려요.",
   alternates: { canonical: "/create" },
   openGraph: {
     title: "광고 만들기 · Muse",
