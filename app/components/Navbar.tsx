@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const NAV_ITEMS = [
@@ -14,9 +15,12 @@ export default function Navbar() {
           aria-label="muse"
           className="shrink-0 inline-flex items-center"
         >
-          <img
+          <Image
             src="/muse_logo_pink.png"
             alt="muse"
+            width={36}
+            height={36}
+            preload
             className="w-9 h-9 transition-transform hover:scale-105"
           />
         </Link>

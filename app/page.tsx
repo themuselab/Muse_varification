@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Navbar from "@/app/components/Navbar";
 import GalleryFilter from "@/app/components/GalleryFilter";
 import { INDUSTRIES, TEMPLATES, AVAILABLE_TEMPLATES } from "@/app/data/industries";
@@ -87,10 +88,11 @@ export default function LandingPage() {
             <span className="text-xs text-fg-muted">업종별 대표</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
-            {featured.map((item) => (
+            {featured.map((item, idx) => (
               <FeaturedCard
                 key={`${item.industry}-${item.templateId}`}
                 item={item}
+                preload={idx < 2}
               />
             ))}
           </div>
@@ -107,7 +109,13 @@ export default function LandingPage() {
   );
 }
 
-function FeaturedCard({ item }: { item: GalleryItem }) {
+function FeaturedCard({
+  item,
+  preload,
+}: {
+  item: GalleryItem;
+  preload?: boolean;
+}) {
   return (
     <a
       href={`/create?industry=${item.industry}&template=${item.templateId}`}
@@ -116,12 +124,15 @@ function FeaturedCard({ item }: { item: GalleryItem }) {
       <span className="absolute top-3 left-3 z-10 px-2 py-0.5 bg-brand text-white text-[10px] font-bold rounded-full tracking-wider">
         HOT
       </span>
-      <img
+      <Image
         src={item.imageSrc}
         alt={item.templateLabel}
-        className="w-full h-full object-cover transition duration-500 group-hover:scale-110"
+        fill
+        sizes="(min-width: 640px) 20vw, 50vw"
+        preload={preload}
+        className="object-cover transition duration-500 group-hover:scale-110"
       />
-      <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 via-black/30 to-transparent px-3 py-3">
+      <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 via-black/30 to-transparent px-3 py-3 z-10">
         <div className="text-white text-xs font-bold">
           {item.industryLabel}
         </div>

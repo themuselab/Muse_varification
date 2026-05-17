@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { INDUSTRIES } from "@/app/data/industries";
 
@@ -99,10 +100,12 @@ function TemplateCard({ item }: { item: GalleryItem }) {
       href={`/create?industry=${item.industry}&template=${item.templateId}`}
       className="group block relative aspect-square rounded-2xl overflow-hidden bg-bg-subtle shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition duration-200"
     >
-      <img
+      <Image
         src={item.imageSrc}
         alt={item.templateLabel}
-        className="w-full h-full object-cover transition duration-500 group-hover:scale-[1.05]"
+        fill
+        sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+        className="object-cover transition duration-500 group-hover:scale-[1.05]"
       />
 
       {/* Hover overlay */}
