@@ -1,0 +1,54 @@
+name: Threads Auto Publish
+
+on:
+  schedule:
+    # KST → UTC (UTC = KST - 9h)
+    - cron: '10 22 * * *'  # 07:10 KST morning
+    - cron: '35 3 * * *'   # 12:35 KST lunch
+    - cron: '8 12 * * *'   # 21:08 KST evening1
+    - cron: '42 12 * * *'  # 21:42 KST evening2
+    - cron: '15 13 * * *'  # 22:15 KST evening3
+    - cron: '48 13 * * *'  # 22:48 KST evening4
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: 'Slot to run (morning/lunch/evening1/evening2/evening3/evening4)'
+        required: true
+        default: 'morning'
+
+concurrency:
+  group: threads-publish-${{ github.event.schedule }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Determine slot
+        id: slot
+        run: |
+          case "${{ github.event.schedule }}" in
+            "10 22 * * *") SLOT=morning ;;
+            "35 3 * * *")  SLOT=lunch ;;
+            "8 12 * * *")  SLOT=evening1 ;;
+            "42 12 * * *") SLOT=evening2 ;;
+            "15 13 * * *") SLOT=evening3 ;;
+            "48 13 * * *") SLOT=evening4 ;;
+            *) SLOT="${{ github.event.inputs.slot }}" ;;
+          esac
+          echo "slot=$SLOT" >> $GITHUB_OUTPUT
+          echo "Running slot: $SLOT"
+
+      - name: Call publish endpoint
+        run: |
+          set -e
+          RESPONSE=$(curl -fsS "https://themuselab.kr/api/cron/post?slot=${{ steps.slot.outputs.slot }}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP_STATUS=%{http_code}")
+          echo "$RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS=" | cut -d= -f2)
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Publish endpoint returned status $STATUS"
+            exit 1
+          fi

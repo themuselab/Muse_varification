@@ -1,0 +1,24 @@
+name: Threads Daily Insights
+
+on:
+  schedule:
+    - cron: '30 14 * * *'  # 23:30 KST daily
+  workflow_dispatch:
+
+jobs:
+  insights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call insights endpoint
+        run: |
+          set -e
+          RESPONSE=$(curl -fsS "https://themuselab.kr/api/cron/threads-insights" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP_STATUS=%{http_code}")
+          echo "$RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS=" | cut -d= -f2)
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Insights endpoint returned status $STATUS"
+            exit 1
+          fi
