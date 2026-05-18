@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/threads-monitor",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}

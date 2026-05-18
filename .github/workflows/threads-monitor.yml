@@ -1,0 +1,30 @@
+name: Threads Monitor
+
+on:
+  schedule:
+    # 5분 간격. GitHub Actions는 분주할 때 최대 15분 지연 가능 (free tier).
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # 수동 트리거 가능
+
+concurrency:
+  # 이전 실행이 안 끝났으면 새 실행을 큐에 쌓지 않고 건너뜀
+  group: threads-monitor
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call Threads monitor cron endpoint
+        run: |
+          set -e
+          RESPONSE=$(curl -fsS -X GET "https://themuselab.kr/api/cron/threads-monitor" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP_STATUS=%{http_code}")
+          echo "$RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS=" | cut -d= -f2)
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Cron endpoint returned status $STATUS"
+            exit 1
+          fi
