@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { conversation, listMyPosts, publish } from "@/lib/threads";
 import { generate } from "@/lib/gemini";
 import { notify, COLORS } from "@/lib/discord";
+import { trackAutoReply } from "@/lib/kv";
 
 const SELF = "themuselab.official";
 const WINDOW_MS = 6 * 60 * 1000;
@@ -180,6 +181,11 @@ export async function GET(req: NextRequest) {
 
       const result = await publish(replyText, { reply_to_id: comment.id });
       replied.push(comment.id);
+      try {
+        await trackAutoReply();
+      } catch {
+        // KV 실패 무시
+      }
       await notify({
         username: "Threads Bot",
         embeds: [

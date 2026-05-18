@@ -3,6 +3,7 @@ import { publish } from "@/lib/threads";
 import { generate } from "@/lib/gemini";
 import { notify, COLORS } from "@/lib/discord";
 import { STYLE_GUIDE } from "@/lib/style-guide";
+import { trackPublish } from "@/lib/kv";
 
 type SlotConfig = {
   prompt: string;
@@ -156,6 +157,18 @@ ${config.pattern_hint}
     return NextResponse.json({ error: "publish", detail: msg, text }, { status: 500 });
   }
 
+  // KV 카운터
+  let publishCount = 0;
+  try {
+    publishCount = await trackPublish({
+      slot,
+      postId: result.id,
+      permalink: result.permalink,
+    });
+  } catch (e) {
+    console.error("trackPublish failed:", e);
+  }
+
   // Notify
   await notify({
     username: "Threads Bot",
@@ -164,7 +177,7 @@ ${config.pattern_hint}
         title: `🌸 자동 발행: ${slot}`,
         description: `${text}\n\n[Threads에서 보기](${result.permalink})`,
         color: COLORS.pink,
-        footer: { text: `topic: ${config.topic_tag} · ${result.id}` },
+        footer: { text: `topic: ${config.topic_tag} · ${result.id} · 오늘 ${publishCount}번째` },
       },
     ],
   });

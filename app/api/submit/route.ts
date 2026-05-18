@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { trackSubmission } from "@/lib/kv";
 
 type SubmitBody = {
   instagram: string;
@@ -284,6 +285,18 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     console.error("Discord webhook fetch threw:", e);
+  }
+
+  // Redis 카운터 (실패해도 신청은 성공해야 하므로 best-effort)
+  try {
+    await trackSubmission({
+      code,
+      industry: body.industry,
+      isCustom: !!body.isCustom,
+      shopName: body.shopName,
+    });
+  } catch (e) {
+    console.error("Redis trackSubmission failed:", e);
   }
 
   return NextResponse.json({ code });
