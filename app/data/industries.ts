@@ -28,7 +28,7 @@ export const INDUSTRIES: Industry[] = [
     id: "lash",
     label: "속눈썹",
     icon: "✨",
-    description: "연장·펌·아이브로우",
+    description: "연장·펌·리프팅",
   },
   {
     id: "skin",
