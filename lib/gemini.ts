@@ -1,4 +1,9 @@
-const MODEL = "gemini-2.5-flash";
+// 우선순위: 2.5 → 2.0 → 2.5-lite. 503/quota 시 다음 모델로 fallback
+const MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
+];
 
 // 모듈 레벨 카운터 — 라운드 로빈 시작점.
 // Serverless cold start마다 리셋되지만 그래도 분산 효과 있음.
@@ -39,6 +44,7 @@ export type ImageInput = { mime: string; base64: string };
 
 async function tryOnce(
   key: string,
+  model: string,
   systemPrompt: string,
   userPrompt: string,
   opts?: { maxTokens?: number; temperature?: number; images?: ImageInput[] },
@@ -53,7 +59,7 @@ async function tryOnce(
   parts.push({ text: userPrompt });
 
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -86,37 +92,37 @@ export async function generate(
   const keys = getKeys();
   if (keys.length === 0) throw new Error("No Gemini API keys configured");
 
-  const tries: Array<{ idx: number; status: "ok" | "retry" | "error"; msg?: string }> = [];
-  const MAX_PASSES = 2; // 모든 키 한 바퀴 돌고 → 잠깐 쉬고 → 한 번 더
+  const tries: Array<{ model: string; idx: number; status: "ok" | "retry" | "error"; msg?: string }> = [];
 
-  for (let pass = 0; pass < MAX_PASSES; pass++) {
-    for (let i = 0; i < keys.length; i++) {
-      const idx = (rotationStart + i) % keys.length;
-      const key = keys[idx];
-      try {
-        const result = await tryOnce(key, systemPrompt, userPrompt, opts);
-        tries.push({ idx, status: "ok" });
-        // 성공한 다음 키부터 다음 호출 시작 → 분산
-        rotationStart = (idx + 1) % keys.length;
-        return result;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (isRetryableError(e)) {
-          tries.push({ idx, status: "retry", msg: msg.slice(0, 80) });
-          continue; // 다음 키로
+  // 모든 모델 × 모든 키 한 번 → 백오프 → 한 번 더
+  for (let pass = 0; pass < 2; pass++) {
+    for (const model of MODELS) {
+      for (let i = 0; i < keys.length; i++) {
+        const idx = (rotationStart + i) % keys.length;
+        const key = keys[idx];
+        try {
+          const result = await tryOnce(key, model, systemPrompt, userPrompt, opts);
+          tries.push({ model, idx, status: "ok" });
+          rotationStart = (idx + 1) % keys.length;
+          return result;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (isRetryableError(e)) {
+            tries.push({ model, idx, status: "retry", msg: msg.slice(0, 60) });
+            continue;
+          }
+          tries.push({ model, idx, status: "error", msg: msg.slice(0, 60) });
+          throw e;
         }
-        tries.push({ idx, status: "error", msg: msg.slice(0, 80) });
-        throw e; // retryable 외 에러는 즉시 throw
       }
     }
-    if (pass < MAX_PASSES - 1) {
-      await sleep(2000); // 한 바퀴 다 retryable → 2초 쉬고 한 번 더
+    if (pass < 1) {
+      await sleep(3000); // 모든 모델×키 retryable → 3초 쉬고 한 번 더
     }
   }
 
-  // 모든 패스 소진
   const summary = tries
-    .map((t) => `[${t.idx}] ${t.status}${t.msg ? `: ${t.msg}` : ""}`)
+    .map((t) => `[${t.model}/${t.idx}] ${t.status}${t.msg ? `: ${t.msg}` : ""}`)
     .join(" | ");
   throw new Error(`Gemini all retries exhausted: ${summary}`);
 }
