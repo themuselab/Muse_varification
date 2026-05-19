@@ -100,6 +100,7 @@ type FormState = {
   location: string;
   message: string;
   customRequest: string;
+  feedPhoto: { mime: string; base64: string; previewUrl: string } | null;
 };
 
 type Props = {
@@ -123,6 +124,7 @@ export default function CreateForm({
     location: "",
     message: "",
     customRequest: "",
+    feedPhoto: null,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +174,25 @@ export default function CreateForm({
     setStep((s) => Math.max(s - 1, 1));
   }
 
+  async function handlePhoto(file: File) {
+    setError(null);
+    if (!file.type.startsWith("image/")) {
+      setError("이미지 파일만 올려주세요 (jpg/png/webp)");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("사진 용량이 너무 커요 (5MB 이내로)");
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const base64 = btoa(bin);
+    update("feedPhoto", { mime: file.type, base64, previewUrl });
+  }
+
   async function submit() {
     if (!form.shopName.trim()) {
       setError("가게 이름을 입력해주세요");
@@ -180,10 +201,19 @@ export default function CreateForm({
     setSubmitting(true);
     setError(null);
     try {
+      // feedPhoto의 previewUrl은 client-only이라 제거 후 전송
+      const { feedPhoto, ...rest } = form;
+      const payload = {
+        ...rest,
+        isCustom,
+        feedPhoto: feedPhoto
+          ? { mime: feedPhoto.mime, base64: feedPhoto.base64 }
+          : null,
+      };
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, isCustom }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "전송 실패");
@@ -373,6 +403,53 @@ export default function CreateForm({
                   rows={4}
                   className="w-full px-4 py-3 bg-bg-elevated border border-border rounded-xl focus:outline-none focus:border-brand resize-none"
                 />
+              </Field>
+              <Field label="📸 가게 분위기 사진 1장 (선택)">
+                <div className="text-xs text-fg-muted mb-2 leading-relaxed">
+                  사장님 인스타 피드에서 광고 톤으로 쓰고 싶은 best 사진 1장.
+                  안 올리셔도 OK — 프로필 사진으로 톤 추정해요.
+                </div>
+                {form.feedPhoto ? (
+                  <div className="relative rounded-xl overflow-hidden border border-border">
+                    <img
+                      src={form.feedPhoto.previewUrl}
+                      alt="업로드된 사진"
+                      className="w-full max-h-72 object-contain bg-bg-subtle"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (form.feedPhoto?.previewUrl)
+                          URL.revokeObjectURL(form.feedPhoto.previewUrl);
+                        update("feedPhoto", null);
+                      }}
+                      className="absolute top-2 right-2 px-3 py-1 bg-black/60 text-white text-xs rounded-full hover:bg-black/80"
+                    >
+                      ✕ 다시 선택
+                    </button>
+                  </div>
+                ) : (
+                  <label className="block cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handlePhoto(f);
+                      }}
+                    />
+                    <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-brand hover:bg-brand-light/40 transition">
+                      <div className="text-2xl mb-1">📷</div>
+                      <div className="text-sm font-semibold text-fg">
+                        사진 선택하기
+                      </div>
+                      <div className="text-xs text-fg-muted mt-1">
+                        jpg / png / webp · 5MB 이내
+                      </div>
+                    </div>
+                  </label>
+                )}
               </Field>
               <div className="bg-brand-light rounded-xl p-4 text-sm leading-relaxed">
                 💡 제출 후 안내에 따라{" "}

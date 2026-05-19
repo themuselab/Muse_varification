@@ -14,6 +14,7 @@ type SubmitBody = {
   message: string;
   customRequest?: string;
   isCustom?: boolean;
+  feedPhoto?: { mime: string; base64: string } | null;
 };
 
 const INDUSTRY_LABELS: Record<string, string> = {
@@ -44,12 +45,13 @@ function generateCode() {
   return code;
 }
 
-/** Gemini로 사장님 메시지 + IG 프로필 톤 분석 → 맞춤 GPT 프롬프트 생성 */
+/** Gemini로 사장님 메시지 + IG 프로필 + 업로드 사진 톤 분석 → 맞춤 GPT 프롬프트 생성 */
 async function generateCustomPromptWithGemini(
   body: SubmitBody,
   templateImageUrl: string | null,
   profile: InstagramProfile | null,
   profilePic: ImageInput | null,
+  uploadedPhoto: ImageInput | null,
 ): Promise<string | null> {
   const indLabel = INDUSTRY_LABELS[body.industry] || body.industry;
   const tplLabel = body.isCustom
@@ -57,13 +59,18 @@ async function generateCustomPromptWithGemini(
     : TEMPLATE_LABELS[body.templateId] || body.templateId;
 
   const systemContext = `너는 1인 뷰티샵 인스타 광고 디자이너의 어시스턴트야.
-사장님이 신청한 정보 + 사장님 인스타 프로필 (사진 + 메타데이터)을 받고,
+사장님이 신청한 정보 + 사장님 인스타 프로필 + (선택적으로) 사장님이 직접 올린 best 사진을 받고,
 디자이너가 ChatGPT(gpt-image-2)에게 바로 붙여넣어서 광고 이미지를 만들 수 있는
 **맞춤 프롬프트**를 생성해야 해.
 
+[이미지 우선순위]
+1. "사장님 업로드 사진" — 사장님이 직접 고른 best 피드 사진. 톤 분석 1순위. (있을 때만)
+2. "프로필 사진" — 인스타 프로필에서 자동 수집. 보조용.
+
 핵심 원칙:
 - 사장님 메시지에서 진짜 강조하고 싶은 키워드 추출
-- 첨부된 사장님 프로필 사진을 보고 가게의 시각적 톤 분석 (색감/분위기/스타일)
+- 첨부된 사진(들)을 보고 가게의 시각적 톤 분석 (색감/분위기/스타일)
+- 업로드 사진이 있으면 그게 메인 톤. 없으면 프로필 사진으로 추정.
 - 분석한 톤을 광고 이미지 컨셉에 반드시 반영
 - 광고 포스터 형식 (카드뉴스 X)
 - 한국 1인샵 사장님 1인칭 톤 (시적 표현 X, 직설 O)
@@ -72,8 +79,9 @@ async function generateCustomPromptWithGemini(
 ## 핵심 컨셉
 한 줄 요약
 
-## 사장님 가게 톤 분석 (프로필 사진 기반)
-프로필 사진에서 본 시각적 특징 — 컬러 팔레트, 분위기, 디자인 스타일.
+## 사장님 가게 톤 분석
+첨부 사진(들)에서 본 시각적 특징 — 컬러 팔레트, 분위기, 디자인 스타일.
+어떤 사진을 메인 톤 소스로 썼는지 명시 (업로드 / 프로필).
 이걸 광고에 그대로 반영해야 함.
 
 ## 이미지 수정 지시
@@ -93,13 +101,18 @@ async function generateCustomPromptWithGemini(
 - 인스타 핸들`;
 
   const profileBlock = profile
-    ? `[사장님 인스타 프로필 (fetch됨)]
+    ? `[사장님 인스타 프로필 (자동 fetch)]
 - 표시명: ${profile.name}
 - 팔로워: ${profile.followers ?? "?"} · 팔로잉: ${profile.following ?? "?"} · 게시물: ${profile.posts ?? "?"}
 - 핸들: @${profile.handle}
-- bio/title 원문: ${profile.displayTitle.slice(0, 200)}
-${profilePic ? "→ 첨부된 프로필 사진을 시각 분석해서 톤 추출해줘." : "(프로필 사진 fetch 실패 — 메타데이터만 활용)"}`
-    : `[인스타 프로필 fetch 실패] 메시지만 활용해서 톤 추정해줘.`;
+- bio/title 원문: ${profile.displayTitle.slice(0, 200)}`
+    : `[인스타 프로필 fetch 실패]`;
+
+  const imageBlock = uploadedPhoto
+    ? `[첨부 이미지 1번 = 사장님 업로드 best 사진 — 톤 분석 1순위]${profilePic ? "\n[첨부 이미지 2번 = 자동 수집 프로필 사진 — 보조 톤]" : ""}`
+    : profilePic
+      ? `[첨부 이미지 = 자동 수집 프로필 사진 — 톤 분석]`
+      : `[첨부 이미지 없음 — 메시지만 활용해서 톤 추정]`;
 
   const userInput = `[사장님 신청 정보]
 - 업종: ${indLabel}
@@ -111,6 +124,8 @@ ${profilePic ? "→ 첨부된 프로필 사진을 시각 분석해서 톤 추출
 
 ${profileBlock}
 
+${imageBlock}
+
 [사장님이 강조하고 싶은 메시지 — 이걸 캐치해서 반영해줘]
 "${body.message || body.customRequest || "(특별한 요청 없음)"}"
 
@@ -120,11 +135,20 @@ ${body.isCustom ? "**맞춤 제작 모드**: 템플릿 무시하고 사장님 �
 사장님 가게 톤이 반영된 광고가 나오도록 구체적으로.`;
 
   try {
-    console.log("[Gemini] calling with profile:", profile?.handle, "pic:", !!profilePic);
+    // 이미지 순서: 업로드 사진(있으면) 먼저, 그 다음 프로필 사진
+    const images: ImageInput[] = [];
+    if (uploadedPhoto) images.push(uploadedPhoto);
+    if (profilePic) images.push(profilePic);
+
+    console.log(
+      "[Gemini] handle:", profile?.handle,
+      "uploaded:", !!uploadedPhoto,
+      "profilePic:", !!profilePic,
+    );
     const text = await geminiGenerate(systemContext, userInput, {
       temperature: 0.7,
       maxTokens: 1500,
-      images: profilePic ? [profilePic] : undefined,
+      images: images.length ? images : undefined,
     });
     console.log("[Gemini] got prompt:", text.slice(0, 200));
     return text || null;
@@ -199,12 +223,21 @@ export async function POST(req: NextRequest) {
       ? await fetchProfilePicBytes(profile.profilePicUrl).catch(() => null)
       : null;
 
-  // 2) Gemini로 맞춤 프롬프트 생성 (프로필 사진 vision input 포함)
+  // 2) 사장님이 업로드한 best 사진 (선택)
+  const uploadedPhoto: ImageInput | null =
+    body.feedPhoto &&
+    typeof body.feedPhoto.mime === "string" &&
+    typeof body.feedPhoto.base64 === "string"
+      ? { mime: body.feedPhoto.mime, base64: body.feedPhoto.base64 }
+      : null;
+
+  // 3) Gemini로 맞춤 프롬프트 생성 (업로드 사진 + 프로필 사진 둘 다 vision input)
   const geminiPrompt = await generateCustomPromptWithGemini(
     body,
     templateImageUrl,
     profile,
     profilePic,
+    uploadedPhoto,
   );
   const customPrompt = geminiPrompt || fallbackPrompt(body);
 
@@ -271,17 +304,45 @@ export async function POST(req: NextRequest) {
       ];
     }
 
+    // 사장님 업로드 사진이 있으면 임베드에 reference + multipart 첨부
+    if (uploadedPhoto) {
+      promptEmbed.fields = [
+        ...(Array.isArray(promptEmbed.fields) ? promptEmbed.fields : []),
+        {
+          name: "📸 사장님 업로드 사진",
+          value: "아래 첨부된 `feed-photo.*` 파일 — 톤 분석에 사용됨",
+        },
+      ];
+    }
+
     const payload = {
       content: body.isCustom
         ? `🎨 **맞춤 광고 신청** \`${code}\``
         : `🎨 **새 광고 신청** \`${code}\``,
       embeds: [infoEmbed, promptEmbed],
     };
-    const dRes = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+
+    let dRes: Response;
+    if (uploadedPhoto) {
+      // multipart로 사진 첨부 + payload_json
+      const ext = uploadedPhoto.mime.split("/")[1] || "jpg";
+      const photoBytes = Buffer.from(uploadedPhoto.base64, "base64");
+      const form = new FormData();
+      form.append("payload_json", JSON.stringify(payload));
+      form.append(
+        "files[0]",
+        new Blob([new Uint8Array(photoBytes)], { type: uploadedPhoto.mime }),
+        `feed-photo-${code}.${ext}`,
+      );
+      dRes = await fetch(webhookUrl, { method: "POST", body: form });
+    } else {
+      dRes = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    }
+
     if (!dRes.ok) {
       const errBody = await dRes.text();
       console.error("Discord webhook FAILED", dRes.status, errBody);
