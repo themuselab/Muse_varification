@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { trackSubmission } from "@/lib/kv";
+import { fetchProfile, fetchProfilePicBytes } from "@/lib/instagram";
+import type { InstagramProfile } from "@/lib/instagram";
+import { generate as geminiGenerate } from "@/lib/gemini";
+import type { ImageInput } from "@/lib/gemini";
 
 type SubmitBody = {
   instagram: string;
@@ -40,27 +44,27 @@ function generateCode() {
   return code;
 }
 
-/** Gemini로 사장님 메시지 분석 → 맞춤 GPT 프롬프트 생성 */
+/** Gemini로 사장님 메시지 + IG 프로필 톤 분석 → 맞춤 GPT 프롬프트 생성 */
 async function generateCustomPromptWithGemini(
   body: SubmitBody,
   templateImageUrl: string | null,
+  profile: InstagramProfile | null,
+  profilePic: ImageInput | null,
 ): Promise<string | null> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-
   const indLabel = INDUSTRY_LABELS[body.industry] || body.industry;
   const tplLabel = body.isCustom
     ? "(맞춤 제작)"
     : TEMPLATE_LABELS[body.templateId] || body.templateId;
 
   const systemContext = `너는 1인 뷰티샵 인스타 광고 디자이너의 어시스턴트야.
-사장님이 신청한 정보를 받고, 디자이너가 ChatGPT(gpt-image-2)에게 바로 붙여넣어서
-광고 이미지를 만들 수 있는 **맞춤 프롬프트**를 생성해야 해.
+사장님이 신청한 정보 + 사장님 인스타 프로필 (사진 + 메타데이터)을 받고,
+디자이너가 ChatGPT(gpt-image-2)에게 바로 붙여넣어서 광고 이미지를 만들 수 있는
+**맞춤 프롬프트**를 생성해야 해.
 
 핵심 원칙:
-- 사장님 메시지에서 진짜 강조하고 싶은 키워드 추출 (예: "프라이빗", "10년차", "청담", "커트 전문")
-- 그 키워드를 광고 카피와 이미지 컨셉에 반드시 반영
-- 갈색/베이지 뷰티 표준 팔레트
+- 사장님 메시지에서 진짜 강조하고 싶은 키워드 추출
+- 첨부된 사장님 프로필 사진을 보고 가게의 시각적 톤 분석 (색감/분위기/스타일)
+- 분석한 톤을 광고 이미지 컨셉에 반드시 반영
 - 광고 포스터 형식 (카드뉴스 X)
 - 한국 1인샵 사장님 1인칭 톤 (시적 표현 X, 직설 O)
 
@@ -68,10 +72,14 @@ async function generateCustomPromptWithGemini(
 ## 핵심 컨셉
 한 줄 요약
 
+## 사장님 가게 톤 분석 (프로필 사진 기반)
+프로필 사진에서 본 시각적 특징 — 컬러 팔레트, 분위기, 디자인 스타일.
+이걸 광고에 그대로 반영해야 함.
+
 ## 이미지 수정 지시
 첨부된 템플릿 이미지를 어떻게 바꿀지 구체적 지시
 - 모델/사진 변경 사항
-- 색감 조정 (있으면)
+- 색감 조정 (위 톤 분석 반영)
 - 텍스트 위치/크기
 
 ## 헤드라인 (한국어, 1줄)
@@ -84,6 +92,15 @@ async function generateCustomPromptWithGemini(
 - 가게 이름 + 위치
 - 인스타 핸들`;
 
+  const profileBlock = profile
+    ? `[사장님 인스타 프로필 (fetch됨)]
+- 표시명: ${profile.name}
+- 팔로워: ${profile.followers ?? "?"} · 팔로잉: ${profile.following ?? "?"} · 게시물: ${profile.posts ?? "?"}
+- 핸들: @${profile.handle}
+- bio/title 원문: ${profile.displayTitle.slice(0, 200)}
+${profilePic ? "→ 첨부된 프로필 사진을 시각 분석해서 톤 추출해줘." : "(프로필 사진 fetch 실패 — 메타데이터만 활용)"}`
+    : `[인스타 프로필 fetch 실패] 메시지만 활용해서 톤 추정해줘.`;
+
   const userInput = `[사장님 신청 정보]
 - 업종: ${indLabel}
 - 가게 이름: ${body.shopName}
@@ -92,47 +109,27 @@ async function generateCustomPromptWithGemini(
 - 선택 템플릿: ${body.templateId} — ${tplLabel}
 - 템플릿 미리보기 URL: ${templateImageUrl || "(없음)"}
 
+${profileBlock}
+
 [사장님이 강조하고 싶은 메시지 — 이걸 캐치해서 반영해줘]
 "${body.message || body.customRequest || "(특별한 요청 없음)"}"
 
 ${body.isCustom ? "**맞춤 제작 모드**: 템플릿 무시하고 사장님 요청대로 디자인" : ""}
 
-위 정보로 디자이너가 ChatGPT에 그대로 복붙할 맞춤 프롬프트를 만들어줘.`;
+위 정보로 디자이너가 ChatGPT에 그대로 복붙할 맞춤 프롬프트를 만들어줘.
+사장님 가게 톤이 반영된 광고가 나오도록 구체적으로.`;
 
   try {
-    console.log("[Gemini] calling with input:", userInput.slice(0, 200));
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemContext }] },
-          contents: [{ role: "user", parts: [{ text: userInput }] }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1500,
-            thinkingConfig: { thinkingBudget: 0 },
-          },
-        }),
-      },
-    );
-    console.log("[Gemini] status:", res.status);
-    if (!res.ok) {
-      console.error("[Gemini] error body:", await res.text());
-      return null;
-    }
-    const data = await res.json();
-    const text: string | undefined =
-      data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      console.error("[Gemini] no text in response:", JSON.stringify(data).slice(0, 500));
-    } else {
-      console.log("[Gemini] got prompt:", text.slice(0, 200));
-    }
-    return text?.trim() || null;
+    console.log("[Gemini] calling with profile:", profile?.handle, "pic:", !!profilePic);
+    const text = await geminiGenerate(systemContext, userInput, {
+      temperature: 0.7,
+      maxTokens: 1500,
+      images: profilePic ? [profilePic] : undefined,
+    });
+    console.log("[Gemini] got prompt:", text.slice(0, 200));
+    return text || null;
   } catch (e) {
-    console.error("[Gemini] fetch threw:", e);
+    console.error("[Gemini] failed:", e);
     return null;
   }
 }
@@ -195,10 +192,19 @@ export async function POST(req: NextRequest) {
     ? null
     : `${siteUrl}/templates/${body.industry}/${body.templateId}.png`;
 
-  // Gemini로 맞춤 프롬프트 생성
+  // 1) 사장님 인스타 프로필 fetch (실패해도 진행)
+  const profile = await fetchProfile(body.instagram).catch(() => null);
+  const profilePic =
+    profile?.profilePicUrl
+      ? await fetchProfilePicBytes(profile.profilePicUrl).catch(() => null)
+      : null;
+
+  // 2) Gemini로 맞춤 프롬프트 생성 (프로필 사진 vision input 포함)
   const geminiPrompt = await generateCustomPromptWithGemini(
     body,
     templateImageUrl,
+    profile,
+    profilePic,
   );
   const customPrompt = geminiPrompt || fallbackPrompt(body);
 

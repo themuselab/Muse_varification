@@ -26,7 +26,11 @@ async function get<T = unknown>(url: string): Promise<T> {
 
 export async function publish(
   text: string,
-  opts?: { topic_tag?: string; reply_to_id?: string },
+  opts?: {
+    topic_tag?: string;
+    reply_to_id?: string;
+    quote_post_id?: string;
+  },
 ): Promise<{ id: string; permalink: string }> {
   const TK = process.env.THREADS_ACCESS_TOKEN;
   if (!TK) throw new Error("Missing THREADS_ACCESS_TOKEN");
@@ -38,6 +42,7 @@ export async function publish(
   };
   if (opts?.topic_tag) params.topic_tag = opts.topic_tag;
   if (opts?.reply_to_id) params.reply_to_id = opts.reply_to_id;
+  if (opts?.quote_post_id) params.quote_post_id = opts.quote_post_id;
 
   const container = (await post(`${API}/me/threads`, params)) as { id: string };
   await sleep(3000);

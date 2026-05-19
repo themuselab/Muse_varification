@@ -4,10 +4,11 @@ on:
   schedule:
     # KST → UTC (UTC = KST - 9h)
     - cron: '10 22 * * *'  # 07:10 KST morning
+    - cron: '0 2 * * *'    # 11:00 KST midday_quote (자산 글 인용)
     - cron: '35 3 * * *'   # 12:35 KST lunch
     - cron: '8 12 * * *'   # 21:08 KST evening1
-    - cron: '42 12 * * *'  # 21:42 KST evening2
-    - cron: '15 13 * * *'  # 22:15 KST evening3
+    - cron: '42 12 * * *'  # 21:42 KST evening2_long (긴 글, '더보기' 트릭)
+    - cron: '15 13 * * *'  # 22:15 KST evening3_counter (반어/카운터)
     - cron: '48 13 * * *'  # 22:48 KST evening4
   workflow_dispatch:
     inputs:
@@ -30,10 +31,11 @@ jobs:
         run: |
           case "${{ github.event.schedule }}" in
             "10 22 * * *") SLOT=morning ;;
+            "0 2 * * *")   SLOT=midday_quote ;;
             "35 3 * * *")  SLOT=lunch ;;
             "8 12 * * *")  SLOT=evening1 ;;
-            "42 12 * * *") SLOT=evening2 ;;
-            "15 13 * * *") SLOT=evening3 ;;
+            "42 12 * * *") SLOT=evening2_long ;;
+            "15 13 * * *") SLOT=evening3_counter ;;
             "48 13 * * *") SLOT=evening4 ;;
             *) SLOT="${{ github.event.inputs.slot }}" ;;
           esac

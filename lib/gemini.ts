@@ -35,12 +35,23 @@ function sleep(ms: number) {
   return new Promise<void>((res) => setTimeout(res, ms));
 }
 
+export type ImageInput = { mime: string; base64: string };
+
 async function tryOnce(
   key: string,
   systemPrompt: string,
   userPrompt: string,
-  opts?: { maxTokens?: number; temperature?: number },
+  opts?: { maxTokens?: number; temperature?: number; images?: ImageInput[] },
 ): Promise<string> {
+  const parts: Array<
+    | { text: string }
+    | { inline_data: { mime_type: string; data: string } }
+  > = [];
+  for (const img of opts?.images || []) {
+    parts.push({ inline_data: { mime_type: img.mime, data: img.base64 } });
+  }
+  parts.push({ text: userPrompt });
+
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`,
     {
@@ -48,7 +59,7 @@ async function tryOnce(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        contents: [{ role: "user", parts }],
         generationConfig: {
           temperature: opts?.temperature ?? 0.95,
           maxOutputTokens: opts?.maxTokens ?? 800,
@@ -70,12 +81,11 @@ async function tryOnce(
 export async function generate(
   systemPrompt: string,
   userPrompt: string,
-  opts?: { maxTokens?: number; temperature?: number },
+  opts?: { maxTokens?: number; temperature?: number; images?: ImageInput[] },
 ): Promise<string> {
   const keys = getKeys();
   if (keys.length === 0) throw new Error("No Gemini API keys configured");
 
-  let lastError: unknown = null;
   const tries: Array<{ idx: number; status: "ok" | "retry" | "error"; msg?: string }> = [];
   const MAX_PASSES = 2; // 모든 키 한 바퀴 돌고 → 잠깐 쉬고 → 한 번 더
 
@@ -93,7 +103,6 @@ export async function generate(
         const msg = e instanceof Error ? e.message : String(e);
         if (isRetryableError(e)) {
           tries.push({ idx, status: "retry", msg: msg.slice(0, 80) });
-          lastError = e;
           continue; // 다음 키로
         }
         tries.push({ idx, status: "error", msg: msg.slice(0, 80) });
