@@ -158,6 +158,73 @@ ${body.isCustom ? "**맞춤 제작 모드**: 템플릿 무시하고 사장님 �
   }
 }
 
+/** Gemini로 사장님께 보낼 인스타 DM 멘트 생성 (광고 발송 시 함께 보낼 텍스트) */
+async function generateDMScript(
+  body: SubmitBody,
+  code: string,
+): Promise<string | null> {
+  const indLabel = INDUSTRY_LABELS[body.industry] || body.industry;
+
+  const system = `너는 Muse (1인 뷰티샵 광고 자동 생성) 운영자가 사장님에게 보낼 인스타 DM 멘트를 작성하는 어시스턴트야.
+
+역할:
+- 광고 1장을 완성해서 사장님께 DM으로 보낼 때, 광고 이미지와 함께 보낼 텍스트 작성
+- 사장님 정보를 받아서 맞춤 멘트로
+
+원칙:
+- 친근하고 따뜻한 톤 ("사장님!" 호명 OK)
+- 가게 이름 + 사장님이 강조한 키워드 자연스럽게 언급 (생색 X)
+- 만족도/부족한 점/가격 의향 3개 질문 포함 (간단하게)
+- 답장 인센티브 1줄 ("다음 광고 무료로 1장 더" 같은 거)
+- 이모지 1-3개 (💛 🙏 🌸 ✨ 정도)
+- 길이 약 250~350자
+- 광고 톤스럽게 X, 진정성 있게
+
+출력: 사장님 DM에 그대로 복붙할 멘트 텍스트만. 설명/마크다운/제목 X.`;
+
+  const user = `[신청 정보]
+- 가게명: ${body.shopName}
+- 업종: ${indLabel}
+- 위치: ${body.location || "(없음)"}
+- 인스타: @${body.instagram}
+- 사장님이 강조한 키워드: "${body.message || body.customRequest || "(특별한 강조 없음)"}"
+- 신청 코드: ${code}
+- 타입: ${body.isCustom ? "맞춤 제작" : "템플릿"}
+
+위 정보로 광고 1장 보낼 때 함께 보낼 DM 멘트 작성해줘.
+사장님 가게/메시지에 맞춤으로.`;
+
+  try {
+    const text = await geminiGenerate(system, user, {
+      temperature: 0.8,
+      maxTokens: 800,
+    });
+    return text || null;
+  } catch (e) {
+    console.error("[Gemini DM] failed:", e);
+    return null;
+  }
+}
+
+/** DM 멘트 fallback */
+function fallbackDMScript(body: SubmitBody): string {
+  return `안녕하세요 ${body.shopName} 사장님!
+Muse입니다 💛
+
+신청해주신 광고 1장 보내드려요.
+이 이미지 그대로 인스타 피드에 올리시면 됩니다.
+
+저희가 베타 단계라 솔직한 피드백이 절실해요.
+3개만 답장해주시면 다음 광고를 무료로 1장 더 보내드릴게요 🙏
+
+1️⃣ 이 광고, 마음에 드시나요? (1~5점)
+2️⃣ 부족하거나 어색한 부분이 있다면 어디인가요?
+3️⃣ 이런 광고를 매달 4~8장 받으신다면, 한 달에 얼마면 "신청할 만하다" 싶으세요?
+
+편하게 답장 주세요 🌸
+— Muse 드림`;
+}
+
 /** Gemini 실패 시 fallback (정적 프롬프트) */
 function fallbackPrompt(body: SubmitBody): string {
   const indLabel = INDUSTRY_LABELS[body.industry] || body.industry;
@@ -231,15 +298,19 @@ export async function POST(req: NextRequest) {
       ? { mime: body.feedPhoto.mime, base64: body.feedPhoto.base64 }
       : null;
 
-  // 3) Gemini로 맞춤 프롬프트 생성 (업로드 사진 + 프로필 사진 둘 다 vision input)
-  const geminiPrompt = await generateCustomPromptWithGemini(
-    body,
-    templateImageUrl,
-    profile,
-    profilePic,
-    uploadedPhoto,
-  );
+  // 3) Gemini로 ChatGPT 프롬프트 + DM 멘트 병렬 생성
+  const [geminiPrompt, dmScriptRaw] = await Promise.all([
+    generateCustomPromptWithGemini(
+      body,
+      templateImageUrl,
+      profile,
+      profilePic,
+      uploadedPhoto,
+    ),
+    generateDMScript(body, code),
+  ]);
   const customPrompt = geminiPrompt || fallbackPrompt(body);
+  const dmScript = dmScriptRaw || fallbackDMScript(body);
 
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) {
@@ -315,11 +386,21 @@ export async function POST(req: NextRequest) {
       ];
     }
 
+    // DM 멘트 임베드 (사장님께 광고 보낼 때 함께 발송할 텍스트)
+    const dmEmbed: Record<string, unknown> = {
+      title: `💌 DM 발송 멘트 (복붙용) — @${body.instagram} 에게`,
+      description: dmScript.slice(0, 4000),
+      color: 0x4f46e5,
+      footer: {
+        text: `${dmScriptRaw ? "Gemini 맞춤 생성" : "기본 템플릿 (Gemini 실패)"} · 만족도/부족점/가격의향 3개 질문 포함`,
+      },
+    };
+
     const payload = {
       content: body.isCustom
         ? `🎨 **맞춤 광고 신청** \`${code}\``
         : `🎨 **새 광고 신청** \`${code}\``,
-      embeds: [infoEmbed, promptEmbed],
+      embeds: [infoEmbed, promptEmbed, dmEmbed],
     };
 
     let dRes: Response;
