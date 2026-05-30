@@ -172,6 +172,7 @@ const TRACK_EVENTS = [
   "alert_click",
   "pin_click",
   "missed_view",
+  "deeplink_open", // 푸시 deeplink 진입
 ] as const;
 export type TrackEvent = (typeof TRACK_EVENTS)[number];
 
@@ -183,11 +184,17 @@ const KEY_TRACK_DWELL_DAY = (variant: string, date: string) =>
   `track:dwell:${variant}:${date}`; // sum of ms
 const KEY_TRACK_DWELL_COUNT = (variant: string, date: string) =>
   `track:dwell:count:${variant}:${date}`;
+const KEY_TRACK_SOURCE_DAY = (source: string, event: string, date: string) =>
+  `track:source:${source}:${event}:${date}`;
+const KEY_TRACK_CAMPAIGN_DAY = (campaignId: string, event: string, date: string) =>
+  `track:campaign:${campaignId}:${event}:${date}`;
 
 export async function trackEvent(meta: {
   event: TrackEvent;
   variant?: "A" | "B";
   ms?: number;
+  source?: string; // "push_a", "push_b", "organic" 등
+  campaignId?: string; // 푸시 캠페인 ID
 }): Promise<void> {
   const date = kstDate();
   await withClient(async (c) => {
@@ -199,6 +206,26 @@ export async function trackEvent(meta: {
       multi.incr(KEY_TRACK_VARIANT_DAY(meta.variant, meta.event, date));
       multi.expire(
         KEY_TRACK_VARIANT_DAY(meta.variant, meta.event, date),
+        90 * 86400,
+      );
+    }
+
+    // source별 집계 (어디서 진입했는지 — push_a/push_b/organic)
+    if (meta.source) {
+      multi.incr(KEY_TRACK_SOURCE_DAY(meta.source, meta.event, date));
+      multi.expire(
+        KEY_TRACK_SOURCE_DAY(meta.source, meta.event, date),
+        90 * 86400,
+      );
+    }
+
+    // campaignId별 집계 (콘솔 발송 캠페인 ID 매칭용)
+    if (meta.campaignId) {
+      multi.incr(
+        KEY_TRACK_CAMPAIGN_DAY(meta.campaignId, meta.event, date),
+      );
+      multi.expire(
+        KEY_TRACK_CAMPAIGN_DAY(meta.campaignId, meta.event, date),
         90 * 86400,
       );
     }

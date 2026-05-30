@@ -20,6 +20,7 @@ const VALID_EVENTS = new Set([
   "alert_click",
   "pin_click",
   "missed_view",
+  "deeplink_open",
 ]);
 
 export async function POST(req: NextRequest) {
@@ -46,12 +47,23 @@ export async function POST(req: NextRequest) {
       ? (body.variant as "A" | "B")
       : undefined;
   const ms = typeof body.ms === "number" ? body.ms : undefined;
+  const source = typeof body.source === "string" ? body.source : undefined;
+  const campaignId =
+    typeof body.campaignId === "string" ? body.campaignId : undefined;
 
   try {
     await trackEvent({
-      event: event as "session_start" | "impression" | "alert_click" | "pin_click" | "missed_view",
+      event: event as
+        | "session_start"
+        | "impression"
+        | "alert_click"
+        | "pin_click"
+        | "missed_view"
+        | "deeplink_open",
       variant,
       ms,
+      source,
+      campaignId,
     });
   } catch (e) {
     // KV 실패해도 클라이언트에 200 — 검증 데이터 누락은 알림에만
