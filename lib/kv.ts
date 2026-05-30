@@ -163,3 +163,111 @@ export async function getPublishCount(date?: string): Promise<number> {
     return parseInt((await c.get(KEY_PUBLISH_DAY(d))) || "0", 10);
   });
 }
+
+// === 앱인토스 mock 검증 이벤트 트래킹 ===
+
+const TRACK_EVENTS = [
+  "session_start",
+  "impression",
+  "alert_click",
+  "pin_click",
+  "missed_view",
+] as const;
+export type TrackEvent = (typeof TRACK_EVENTS)[number];
+
+const KEY_TRACK_EVENT_DAY = (event: string, date: string) =>
+  `track:event:${event}:${date}`;
+const KEY_TRACK_VARIANT_DAY = (variant: string, event: string, date: string) =>
+  `track:variant:${variant}:${event}:${date}`;
+const KEY_TRACK_DWELL_DAY = (variant: string, date: string) =>
+  `track:dwell:${variant}:${date}`; // sum of ms
+const KEY_TRACK_DWELL_COUNT = (variant: string, date: string) =>
+  `track:dwell:count:${variant}:${date}`;
+
+export async function trackEvent(meta: {
+  event: TrackEvent;
+  variant?: "A" | "B";
+  ms?: number;
+}): Promise<void> {
+  const date = kstDate();
+  await withClient(async (c) => {
+    const multi = c.multi();
+    multi.incr(KEY_TRACK_EVENT_DAY(meta.event, date));
+    multi.expire(KEY_TRACK_EVENT_DAY(meta.event, date), 90 * 86400);
+
+    if (meta.variant) {
+      multi.incr(KEY_TRACK_VARIANT_DAY(meta.variant, meta.event, date));
+      multi.expire(
+        KEY_TRACK_VARIANT_DAY(meta.variant, meta.event, date),
+        90 * 86400,
+      );
+    }
+
+    // dwell time 누적 (missed_view 이벤트일 때만)
+    if (meta.event === "missed_view" && meta.ms && meta.variant) {
+      multi.incrBy(KEY_TRACK_DWELL_DAY(meta.variant, date), meta.ms);
+      multi.expire(KEY_TRACK_DWELL_DAY(meta.variant, date), 90 * 86400);
+      multi.incr(KEY_TRACK_DWELL_COUNT(meta.variant, date));
+      multi.expire(KEY_TRACK_DWELL_COUNT(meta.variant, date), 90 * 86400);
+    }
+
+    await multi.exec();
+  });
+}
+
+export async function getTrackStats(date?: string): Promise<{
+  date: string;
+  byEvent: Record<string, number>;
+  byVariant: { A: Record<string, number>; B: Record<string, number> };
+  avgDwellMs: { A: number; B: number };
+  ctr: { A: number; B: number; overall: number };
+}> {
+  const d = date || kstDate();
+  return withClient(async (c) => {
+    const byEvent: Record<string, number> = {};
+    const byVariant = {
+      A: {} as Record<string, number>,
+      B: {} as Record<string, number>,
+    };
+
+    for (const ev of TRACK_EVENTS) {
+      byEvent[ev] = parseInt(
+        (await c.get(KEY_TRACK_EVENT_DAY(ev, d))) || "0",
+        10,
+      );
+      for (const v of ["A", "B"] as const) {
+        byVariant[v][ev] = parseInt(
+          (await c.get(KEY_TRACK_VARIANT_DAY(v, ev, d))) || "0",
+          10,
+        );
+      }
+    }
+
+    // dwell avg
+    const dwellAvg = { A: 0, B: 0 };
+    for (const v of ["A", "B"] as const) {
+      const sum = parseInt((await c.get(KEY_TRACK_DWELL_DAY(v, d))) || "0", 10);
+      const cnt = parseInt(
+        (await c.get(KEY_TRACK_DWELL_COUNT(v, d))) || "0",
+        10,
+      );
+      dwellAvg[v] = cnt > 0 ? Math.round(sum / cnt) : 0;
+    }
+
+    // CTR = alert_click / impression
+    const ctr = {
+      A:
+        byVariant.A.impression > 0
+          ? byVariant.A.alert_click / byVariant.A.impression
+          : 0,
+      B:
+        byVariant.B.impression > 0
+          ? byVariant.B.alert_click / byVariant.B.impression
+          : 0,
+      overall:
+        byEvent.impression > 0 ? byEvent.alert_click / byEvent.impression : 0,
+    };
+
+    return { date: d, byEvent, byVariant, avgDwellMs: dwellAvg, ctr };
+  });
+}
