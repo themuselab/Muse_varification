@@ -1,0 +1,38 @@
+name: Track Report (KST 00:00 daily)
+
+on:
+  schedule:
+    # KST 00:00 = UTC 15:00
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'YYYY-MM-DD (특정 일자 보고). 비우면 어제.'
+        required: false
+        default: ''
+
+concurrency:
+  group: track-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call track-report endpoint
+        run: |
+          set -e
+          DATE_PARAM=""
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            DATE_PARAM="?date=${{ github.event.inputs.date }}"
+          fi
+          RESPONSE=$(curl -fsS "https://themuselab.kr/api/cron/track-report${DATE_PARAM}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP_STATUS=%{http_code}")
+          echo "$RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS=" | cut -d= -f2)
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::track-report returned status $STATUS"
+            exit 1
+          fi

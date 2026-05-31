@@ -111,59 +111,6 @@ export async function getSubmissionStats(): Promise<{
   });
 }
 
-// === Auto-reply 카운터 (모니터 cron에서 활용 가능) ===
-
-const KEY_REPLY_DAY = (date: string) => `reply:day:${date}`;
-
-export async function trackAutoReply(): Promise<number> {
-  const date = kstDate();
-  return withClient(async (c) => {
-    const n = await c.incr(KEY_REPLY_DAY(date));
-    await c.expire(KEY_REPLY_DAY(date), 90 * 86400);
-    return n;
-  });
-}
-
-export async function getReplyCount(date?: string): Promise<number> {
-  const d = date || kstDate();
-  return withClient(async (c) => {
-    return parseInt((await c.get(KEY_REPLY_DAY(d))) || "0", 10);
-  });
-}
-
-// === 자동 발행 카운터 ===
-
-const KEY_PUBLISH_DAY = (date: string) => `publish:day:${date}`;
-const KEY_PUBLISH_LIST = (date: string) => `publish:list:${date}`;
-
-export async function trackPublish(meta: {
-  slot: string;
-  postId: string;
-  permalink: string;
-}): Promise<number> {
-  const date = kstDate();
-  const ts = Date.now();
-  return withClient(async (c) => {
-    const multi = c.multi();
-    multi.incr(KEY_PUBLISH_DAY(date));
-    multi.expire(KEY_PUBLISH_DAY(date), 90 * 86400);
-    multi.zAdd(KEY_PUBLISH_LIST(date), {
-      score: ts,
-      value: `${meta.slot}|${meta.postId}|${meta.permalink}`,
-    });
-    multi.expire(KEY_PUBLISH_LIST(date), 90 * 86400);
-    const r = await multi.exec();
-    return Number(r?.[0] || 0);
-  });
-}
-
-export async function getPublishCount(date?: string): Promise<number> {
-  const d = date || kstDate();
-  return withClient(async (c) => {
-    return parseInt((await c.get(KEY_PUBLISH_DAY(d))) || "0", 10);
-  });
-}
-
 // === 앱인토스 mock 검증 이벤트 트래킹 ===
 
 const TRACK_EVENTS = [
