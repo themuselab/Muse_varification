@@ -1,7 +1,10 @@
 export async function notify(payload: object): Promise<void> {
-  const URL = process.env.DISCORD_THREADS_WEBHOOK_URL;
+  // Threads 자동화 제거 후 DISCORD_WEBHOOK_URL 사용 (메인 채널)
+  const URL =
+    process.env.DISCORD_WEBHOOK_URL ||
+    process.env.DISCORD_THREADS_WEBHOOK_URL;
   if (!URL) {
-    console.warn("Missing DISCORD_THREADS_WEBHOOK_URL");
+    console.warn("Missing DISCORD_WEBHOOK_URL");
     return;
   }
   try {

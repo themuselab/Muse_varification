@@ -41,8 +41,18 @@ export async function GET(req: NextRequest) {
   const ctrA = (stats.ctr.A * 100).toFixed(1);
   const ctrB = (stats.ctr.B * 100).toFixed(1);
   const fmtMs = (ms: number) => (ms ? `${(ms / 1000).toFixed(1)}초` : "—");
+  // time-to-click — 분 단위로도 표시
+  const fmtTtc = (ms: number) => {
+    if (!ms) return "—";
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}초`;
+    return `${(ms / 60_000).toFixed(1)}분`;
+  };
   const A = stats.byVariant.A;
   const B = stats.byVariant.B;
+  const PT = stats.byPlatform.toss;
+  const PW = stats.byPlatform.web;
+  const ctrTossPct = (stats.ctrByPlatform.toss * 100).toFixed(1);
+  const ctrWebPct = (stats.ctrByPlatform.web * 100).toFixed(1);
 
   // 비활성 일자는 가벼운 요약만
   const isQuiet = totalSess === 0 && totalImp === 0;
@@ -73,9 +83,16 @@ export async function GET(req: NextRequest) {
             name: "🎯 핵심 KPI",
             value:
               `**전체 CTR**: ${ctrPct}% (${totalClk}/${totalImp})\n` +
-              `**A안 CTR** (할인): ${ctrA}% · 머문 ${fmtMs(stats.avgDwellMs.A)}\n` +
-              `**B안 CTR** (한정): ${ctrB}% · 머문 ${fmtMs(stats.avgDwellMs.B)}\n` +
+              `**A안** (할인): CTR ${ctrA}% · 알림→클릭 ${fmtTtc(stats.avgTimeToClickMs.A)} · 모달 머문 ${fmtMs(stats.avgDwellMs.A)}\n` +
+              `**B안** (한정): CTR ${ctrB}% · 알림→클릭 ${fmtTtc(stats.avgTimeToClickMs.B)} · 모달 머문 ${fmtMs(stats.avgDwellMs.B)}\n` +
               `**푸시 → 진입**: ${stats.byEvent.deeplink_open || 0}건`,
+            inline: false,
+          },
+          {
+            name: "🌐 플랫폼별 진입",
+            value:
+              `**토스**: 세션 ${PT.session_start || 0} · 노출 ${PT.impression || 0} · 클릭 ${PT.alert_click || 0} · CTR ${ctrTossPct}%\n` +
+              `**웹**: 세션 ${PW.session_start || 0} · 노출 ${PW.impression || 0} · 클릭 ${PW.alert_click || 0} · CTR ${ctrWebPct}%`,
             inline: false,
           },
           {
@@ -89,7 +106,7 @@ export async function GET(req: NextRequest) {
             inline: true,
           },
           {
-            name: "⚖️ A vs B",
+            name: "⚖️ A vs B (이벤트)",
             value:
               `세션: ${A.session_start} / ${B.session_start}\n` +
               `노출: ${A.impression} / ${B.impression}\n` +

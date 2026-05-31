@@ -77,6 +77,10 @@ export async function POST(req: NextRequest) {
   const source = typeof body.source === "string" ? body.source : undefined;
   const campaignId =
     typeof body.campaignId === "string" ? body.campaignId : undefined;
+  const platform =
+    body.platform === "toss" || body.platform === "web"
+      ? (body.platform as "toss" | "web")
+      : undefined;
 
   try {
     await trackEvent({
@@ -91,6 +95,7 @@ export async function POST(req: NextRequest) {
       ms,
       source,
       campaignId,
+      platform,
     });
   } catch (e) {
     // KV 실패해도 클라이언트에 200 — 검증 데이터 누락은 알림에만

@@ -131,17 +131,26 @@ const KEY_TRACK_DWELL_DAY = (variant: string, date: string) =>
   `track:dwell:${variant}:${date}`; // sum of ms
 const KEY_TRACK_DWELL_COUNT = (variant: string, date: string) =>
   `track:dwell:count:${variant}:${date}`;
+const KEY_TRACK_TTC_DAY = (variant: string, date: string) =>
+  `track:ttc:${variant}:${date}`;
+const KEY_TRACK_TTC_COUNT = (variant: string, date: string) =>
+  `track:ttc:count:${variant}:${date}`;
 const KEY_TRACK_SOURCE_DAY = (source: string, event: string, date: string) =>
   `track:source:${source}:${event}:${date}`;
 const KEY_TRACK_CAMPAIGN_DAY = (campaignId: string, event: string, date: string) =>
   `track:campaign:${campaignId}:${event}:${date}`;
+const KEY_TRACK_PLATFORM_DAY = (platform: string, event: string, date: string) =>
+  `track:platform:${platform}:${event}:${date}`;
+
+export type Platform = "toss" | "web";
 
 export async function trackEvent(meta: {
   event: TrackEvent;
   variant?: "A" | "B";
   ms?: number;
-  source?: string; // "push_a", "push_b", "organic" 등
-  campaignId?: string; // 푸시 캠페인 ID
+  source?: string;
+  campaignId?: string;
+  platform?: Platform;
 }): Promise<void> {
   const date = kstDate();
   await withClient(async (c) => {
@@ -157,7 +166,7 @@ export async function trackEvent(meta: {
       );
     }
 
-    // source별 집계 (어디서 진입했는지 — push_a/push_b/organic)
+    // source별 집계
     if (meta.source) {
       multi.incr(KEY_TRACK_SOURCE_DAY(meta.source, meta.event, date));
       multi.expire(
@@ -166,7 +175,7 @@ export async function trackEvent(meta: {
       );
     }
 
-    // campaignId별 집계 (콘솔 발송 캠페인 ID 매칭용)
+    // campaignId별 집계
     if (meta.campaignId) {
       multi.incr(
         KEY_TRACK_CAMPAIGN_DAY(meta.campaignId, meta.event, date),
@@ -177,12 +186,31 @@ export async function trackEvent(meta: {
       );
     }
 
-    // dwell time 누적 (missed_view 이벤트일 때만)
+    // platform별 집계 (toss vs web)
+    if (meta.platform === "toss" || meta.platform === "web") {
+      multi.incr(
+        KEY_TRACK_PLATFORM_DAY(meta.platform, meta.event, date),
+      );
+      multi.expire(
+        KEY_TRACK_PLATFORM_DAY(meta.platform, meta.event, date),
+        90 * 86400,
+      );
+    }
+
+    // dwell time 누적 (missed_view)
     if (meta.event === "missed_view" && meta.ms && meta.variant) {
       multi.incrBy(KEY_TRACK_DWELL_DAY(meta.variant, date), meta.ms);
       multi.expire(KEY_TRACK_DWELL_DAY(meta.variant, date), 90 * 86400);
       multi.incr(KEY_TRACK_DWELL_COUNT(meta.variant, date));
       multi.expire(KEY_TRACK_DWELL_COUNT(meta.variant, date), 90 * 86400);
+    }
+
+    // time-to-click 누적 (alert_click 시 노출→클릭까지 ms)
+    if (meta.event === "alert_click" && meta.ms && meta.variant) {
+      multi.incrBy(KEY_TRACK_TTC_DAY(meta.variant, date), meta.ms);
+      multi.expire(KEY_TRACK_TTC_DAY(meta.variant, date), 90 * 86400);
+      multi.incr(KEY_TRACK_TTC_COUNT(meta.variant, date));
+      multi.expire(KEY_TRACK_TTC_COUNT(meta.variant, date), 90 * 86400);
     }
 
     await multi.exec();
@@ -215,8 +243,11 @@ export async function getTrackStats(date?: string): Promise<{
   date: string;
   byEvent: Record<string, number>;
   byVariant: { A: Record<string, number>; B: Record<string, number> };
+  byPlatform: { toss: Record<string, number>; web: Record<string, number> };
   avgDwellMs: { A: number; B: number };
+  avgTimeToClickMs: { A: number; B: number };
   ctr: { A: number; B: number; overall: number };
+  ctrByPlatform: { toss: number; web: number };
 }> {
   const d = date || kstDate();
   return withClient(async (c) => {
@@ -224,6 +255,10 @@ export async function getTrackStats(date?: string): Promise<{
     const byVariant = {
       A: {} as Record<string, number>,
       B: {} as Record<string, number>,
+    };
+    const byPlatform = {
+      toss: {} as Record<string, number>,
+      web: {} as Record<string, number>,
     };
 
     for (const ev of TRACK_EVENTS) {
@@ -234,6 +269,12 @@ export async function getTrackStats(date?: string): Promise<{
       for (const v of ["A", "B"] as const) {
         byVariant[v][ev] = parseInt(
           (await c.get(KEY_TRACK_VARIANT_DAY(v, ev, d))) || "0",
+          10,
+        );
+      }
+      for (const p of ["toss", "web"] as const) {
+        byPlatform[p][ev] = parseInt(
+          (await c.get(KEY_TRACK_PLATFORM_DAY(p, ev, d))) || "0",
           10,
         );
       }
@@ -250,7 +291,15 @@ export async function getTrackStats(date?: string): Promise<{
       dwellAvg[v] = cnt > 0 ? Math.round(sum / cnt) : 0;
     }
 
-    // CTR = alert_click / impression
+    // time-to-click avg
+    const ttcAvg = { A: 0, B: 0 };
+    for (const v of ["A", "B"] as const) {
+      const sum = parseInt((await c.get(KEY_TRACK_TTC_DAY(v, d))) || "0", 10);
+      const cnt = parseInt((await c.get(KEY_TRACK_TTC_COUNT(v, d))) || "0", 10);
+      ttcAvg[v] = cnt > 0 ? Math.round(sum / cnt) : 0;
+    }
+
+    // CTR
     const ctr = {
       A:
         byVariant.A.impression > 0
@@ -263,7 +312,26 @@ export async function getTrackStats(date?: string): Promise<{
       overall:
         byEvent.impression > 0 ? byEvent.alert_click / byEvent.impression : 0,
     };
+    const ctrByPlatform = {
+      toss:
+        byPlatform.toss.impression > 0
+          ? byPlatform.toss.alert_click / byPlatform.toss.impression
+          : 0,
+      web:
+        byPlatform.web.impression > 0
+          ? byPlatform.web.alert_click / byPlatform.web.impression
+          : 0,
+    };
 
-    return { date: d, byEvent, byVariant, avgDwellMs: dwellAvg, ctr };
+    return {
+      date: d,
+      byEvent,
+      byVariant,
+      byPlatform,
+      avgDwellMs: dwellAvg,
+      avgTimeToClickMs: ttcAvg,
+      ctr,
+      ctrByPlatform,
+    };
   });
 }
