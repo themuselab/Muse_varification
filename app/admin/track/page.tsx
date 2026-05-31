@@ -157,6 +157,54 @@ export default function AdminTrack() {
           >
             새로고침
           </button>
+          <button
+            onClick={async () => {
+              const secret = prompt(
+                "관리자 토큰 (CRON_SECRET) 입력:\n취소 누르면 중단",
+              );
+              if (!secret) return;
+              const scope = date ? `${date} 데이터` : "전체 데이터";
+              if (
+                !confirm(
+                  `${scope}를 정말 초기화할까요?\n이 작업은 되돌릴 수 없어요.`,
+                )
+              )
+                return;
+              try {
+                const url = date
+                  ? `/api/track?date=${date}`
+                  : `/api/track`;
+                const r = await fetch(url, {
+                  method: "DELETE",
+                  headers: { Authorization: `Bearer ${secret}` },
+                });
+                if (!r.ok) {
+                  const t = await r.text();
+                  alert(`실패 (${r.status}): ${t.slice(0, 200)}`);
+                  return;
+                }
+                const data = await r.json();
+                alert(
+                  `초기화 완료 — ${data.deleted}개 키 삭제 (범위: ${data.scope})`,
+                );
+                fetchStats(date || undefined);
+              } catch (e) {
+                alert("요청 실패: " + (e instanceof Error ? e.message : String(e)));
+              }
+            }}
+            style={{
+              padding: "8px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              border: "1px solid #dc2626",
+              borderRadius: 8,
+              background: "white",
+              color: "#dc2626",
+              cursor: "pointer",
+            }}
+          >
+            데이터 초기화
+          </button>
           <label
             style={{
               fontSize: 12,

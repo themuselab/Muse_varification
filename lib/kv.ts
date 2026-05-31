@@ -242,6 +242,28 @@ export async function trackEvent(meta: {
   });
 }
 
+export async function resetTrackData(
+  date?: string,
+): Promise<{ deleted: number }> {
+  return withClient(async (c) => {
+    const pattern = date ? `track:*:${date}` : "track:*";
+    let cursor = "0";
+    let deleted = 0;
+    do {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = (await (c as any).scan(cursor, {
+        MATCH: pattern,
+        COUNT: 200,
+      })) as { cursor: string | number; keys: string[] };
+      cursor = String(result.cursor);
+      if (result.keys && result.keys.length > 0) {
+        deleted += await c.del(result.keys);
+      }
+    } while (cursor !== "0");
+    return { deleted };
+  });
+}
+
 export async function getTrackStats(date?: string): Promise<{
   date: string;
   byEvent: Record<string, number>;

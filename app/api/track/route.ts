@@ -1,17 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { trackEvent, getTrackStats } from "@/lib/kv";
+import { trackEvent, getTrackStats, resetTrackData } from "@/lib/kv";
 
 // CORS: 앱인토스 mock 검증용 — 모든 출처 허용 (이벤트만 받음)
 function corsHeaders(): HeadersInit {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });
+}
+
+// DELETE /api/track[?date=YYYY-MM-DD] — 트래커 데이터 초기화
+// Authorization: Bearer {CRON_SECRET} 필요
+export async function DELETE(req: NextRequest) {
+  const auth = req.headers.get("authorization") || "";
+  const expected = process.env.CRON_SECRET;
+  if (!expected || auth !== `Bearer ${expected}`) {
+    return NextResponse.json(
+      { error: "unauthorized" },
+      { status: 401, headers: corsHeaders() },
+    );
+  }
+  const date = req.nextUrl.searchParams.get("date") || undefined;
+  try {
+    const r = await resetTrackData(date);
+    return NextResponse.json(
+      { ok: true, deleted: r.deleted, scope: date || "all" },
+      { headers: corsHeaders() },
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json(
+      { error: "reset_failed", detail: msg },
+      { status: 500, headers: corsHeaders() },
+    );
+  }
 }
 
 const VALID_EVENTS = new Set([
