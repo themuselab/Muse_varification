@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await notify({
-      username: "Muse Track",
+      username: "Syak Track",
       embeds: [
         {
           title: `❌ 보고 실패 — ${reportDate}`,
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   if (isQuiet) {
     await notify({
-      username: "Muse Track",
+      username: "Syak Track",
       embeds: [
         {
           title: `📊 검증 데이터 — ${reportDate}`,
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   }
 
   await notify({
-    username: "Muse Track",
+    username: "Syak Track",
     embeds: [
       {
         title: `📊 검증 데이터 — ${reportDate}`,
